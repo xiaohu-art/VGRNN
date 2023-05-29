@@ -1,0 +1,11 @@
+seed: 3
+epoch: 1000
+eval_interval: 20
+h_dim: 32
+z_dim: 16
+n_layers: 1
+clip: 10
+lr: 1e-2
+eps: 1e-10
+conv_type: GCN
+datasets: enron10 # dplb fb
