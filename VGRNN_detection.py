@@ -71,11 +71,6 @@ def main(cfg):
                   bias = True,
                   device=device)
     
-    mp = MessagePassing()
-    print(mp.message_args)
-    print(mp.update_args)
-    exit()
-    
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     
     '''
