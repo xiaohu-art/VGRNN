@@ -1,1 +1,1 @@
-# Python 3.8 implementation for VGRNN based on cuda 11.3
+# VGRNN implementation in Python 3.8 on cuda 11.3
