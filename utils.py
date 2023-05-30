@@ -2,7 +2,8 @@ import pickle
 import numpy as np
 import scipy.sparse as sp
 from sklearn.metrics import roc_auc_score, average_precision_score
-import torch_scatter
+import torch
+import matplotlib.pyplot as plt
 
 def loader(datasets):
 
@@ -21,40 +22,6 @@ def sparse_to_tuple(sparse_mx):
     values = sparse_mx.data
     shape = sparse_mx.shape
     return coords, values, shape
-
-'''
-to be change
-'''
-def scatter_(name, src, index, dim_size=None):
-    r"""Aggregates all values from the :attr:`src` tensor at the indices
-    specified in the :attr:`index` tensor along the first dimension.
-    If multiple indices reference the same location, their contributions
-    are aggregated according to :attr:`name` (either :obj:`"add"`,
-    :obj:`"mean"` or :obj:`"max"`).
-    Args:
-        name (string): The aggregation to use (:obj:`"add"`, :obj:`"mean"`,
-            :obj:`"max"`).
-        src (Tensor): The source tensor.
-        index (LongTensor): The indices of elements to scatter.
-        dim_size (int, optional): Automatically create output tensor with size
-            :attr:`dim_size` in the first dimension. If set to :attr:`None`, a
-            minimal sized output tensor is returned. (default: :obj:`None`)
-    :rtype: :class:`Tensor`
-    """
-
-    assert name in ['add', 'mean', 'max']
-
-    op = getattr(torch_scatter, 'scatter_{}'.format(name))
-    fill_value = -1e38 if name is 'max' else 0
-
-    out = op(src, index, 0, None, dim_size, fill_value)
-    if isinstance(out, tuple):
-        out = out[0]
-
-    if name is 'max':
-        out[out == fill_value] = 0
-
-    return out
 
 def mask_edges_det(adjs_list):
     adj_train_l, train_edges_l, val_edges_l = [], [], []
@@ -150,16 +117,17 @@ def mask_edges_det(adjs_list):
 
     return adj_train_l, train_edges_l, val_edges_l, val_edges_false_l, test_edges_l, test_edges_false_l
 
+@torch.no_grad()
 def get_roc_scores(edges_pos, edges_neg, adj_orig_dense_list, embs):
     def sigmoid(x):
         return 1 / (1 + np.exp(-x))
     
     auc_scores = []
     ap_scores = []
-    
+
     for i in range(len(edges_pos)):
         # Predict on test set of edges
-        emb = embs[i].detach().numpy()
+        emb = embs[i].cpu().numpy()
         adj_rec = np.dot(emb, emb.T)
         adj_orig_t = adj_orig_dense_list[i]
         preds = []
@@ -180,3 +148,27 @@ def get_roc_scores(edges_pos, edges_neg, adj_orig_dense_list, embs):
         ap_scores.append(average_precision_score(labels_all, preds_all))
 
     return auc_scores, ap_scores
+
+def visualize(kld_losses, nll_losses, losses, auc_val, ap_val, auc_test, ap_test):
+    
+    plt.figure(figsize=(20, 6))
+
+    plt.subplot(1, 2, 1)
+    plt.title("kld loss, nll loss and total loss")
+    plt.plot(kld_losses, label="kld loss")
+    plt.plot(nll_losses, label="nll loss")
+    plt.plot(losses, label="loss")
+    plt.legend()
+    plt.xlabel("epoch")
+
+    plt.subplot(1, 2, 2)
+    plt.title("auc scores and ap scores")
+    plt.plot(auc_val, label="Val set auc score")
+    plt.plot(ap_val, label="Val set ap score")
+    plt.plot(auc_test, label="Test set auc score")
+    plt.plot(ap_test, label="Test set ap score")
+    plt.legend()
+    plt.xlabel("epoch / interval")
+
+    plt.savefig("result.png")
+    plt.close()

@@ -1,11 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.parameter import Parameter
-from torch_scatter import scatter_add, sactter_max, scatter_mean
-from torch_geometric.utils import add_self_loops
-import inspect
-from utils import scatter_
+from torch.autograd import Variable
+
+from torch_geometric.nn import GCNConv
 
 class InnerProductDecoder(nn.Module):
     def __init__(self, act=torch.sigmoid, dropout=0.):
@@ -20,122 +18,57 @@ class InnerProductDecoder(nn.Module):
         x = torch.mm(inp, x)
         return self.act(x)
 
-class MessagePassing(nn.Module):
-    def __init__(self, aggr='add'):
-        super(MessagePassing, self).__init__()
+class graph_gru_gcn(nn.Module):
+    def __init__(self, input_size, hidden_size, n_layer, bias=True, device="cuda"):
+        super(graph_gru_gcn, self).__init__()
 
-        self.message_args = inspect.getargspec(self.message)[0][1:]
-        self.update_args = inspect.getargspec(self.update)[0][2:]
+        self.hidden_size = hidden_size
+        self.n_layer = n_layer
+        
+        self.device = device
 
-    def propagate(self, aggr, edge_index, **kwargs):
-        r"""The initial call to start propagating messages.
-        Takes in an aggregation scheme (:obj:`"add"`, :obj:`"mean"` or
-        :obj:`"max"`), the edge indices, and all additional data which is
-        needed to construct messages and to update node embeddings."""
-
-        assert aggr in ['add', 'mean', 'max']
-        kwargs['edge_index'] = edge_index
-
-        size = None
-        message_args = []
-        for arg in self.message_args:
-            if arg[-2:] == '_i':
-                tmp = kwargs[arg[:-2]]
-                size = tmp.size(0)
-                message_args.append(tmp[edge_index[0]])
-            elif arg[-2:] == '_j':
-                tmp = kwargs[arg[:-2]]
-                size = tmp.size(0)
-                message_args.append(tmp[edge_index[1]])
+        # gru weights
+        self.weight_xz = []
+        self.weight_hz = []
+        self.weight_xr = []
+        self.weight_hr = []
+        self.weight_xh = []
+        self.weight_hh = []
+        
+        for i in range(self.n_layer):
+            if i==0:
+                self.weight_xz.append(GCNConv(input_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+                self.weight_hz.append(GCNConv(hidden_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+                self.weight_xr.append(GCNConv(input_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+                self.weight_hr.append(GCNConv(hidden_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+                self.weight_xh.append(GCNConv(input_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+                self.weight_hh.append(GCNConv(hidden_size, hidden_size, act=lambda x:x, bias=bias).to(device))
             else:
-                message_args.append(kwargs[arg])
+                self.weight_xz.append(GCNConv(hidden_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+                self.weight_hz.append(GCNConv(hidden_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+                self.weight_xr.append(GCNConv(hidden_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+                self.weight_hr.append(GCNConv(hidden_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+                self.weight_xh.append(GCNConv(hidden_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+                self.weight_hh.append(GCNConv(hidden_size, hidden_size, act=lambda x:x, bias=bias).to(device))
+    
+    def forward(self, inp, edgidx, h):
+        h_out = torch.zeros(h.size()).to(self.device)
+        for i in range(self.n_layer):
+            if i==0:
+                z_g = torch.sigmoid(self.weight_xz[i](inp, edgidx) + self.weight_hz[i](h[i], edgidx))
+                r_g = torch.sigmoid(self.weight_xr[i](inp, edgidx) + self.weight_hr[i](h[i], edgidx))
+                h_tilde_g = torch.tanh(self.weight_xh[i](inp, edgidx) + self.weight_hh[i](r_g * h[i], edgidx))
+                
+            else:
+                z_g = torch.sigmoid(self.weight_xz[i](h_out[i-1], edgidx) + self.weight_hz[i](h[i], edgidx))
+                r_g = torch.sigmoid(self.weight_xr[i](h_out[i-1], edgidx) + self.weight_hr[i](h[i], edgidx))
+                h_tilde_g = torch.tanh(self.weight_xh[i](h_out[i-1], edgidx) + self.weight_hh[i](r_g * h[i], edgidx))
 
-        update_args = [kwargs[arg] for arg in self.update_args]
+            h_out[i] = z_g * h[i] + (1 - z_g) * h_tilde_g
 
-        out = self.message(*message_args)
-        out = scatter_(aggr, out, edge_index[0], dim_size=size)
-        out = self.update(out, *update_args)
-
-        return out
-
-    def message(self, x_j):  # pragma: no cover
-        r"""Constructs messages in analogy to :math:`\phi_{\mathbf{\Theta}}`
-        for each edge in :math:`(i,j) \in \mathcal{E}`.
-        Can take any argument which was initially passed to :meth:`propagate`.
-        In addition, features can be lifted to the source node :math:`i` and
-        target node :math:`j` by appending :obj:`_i` or :obj:`_j` to the
-        variable name, *.e.g.* :obj:`x_i` and :obj:`x_j`."""
-
-        return x_j
-
-    def update(self, aggr_out):  # pragma: no cover
-        r"""Updates node embeddings in analogy to
-        :math:`\gamma_{\mathbf{\Theta}}` for each node
-        :math:`i \in \mathcal{V}`.
-        Takes in the output of aggregation as first argument and any argument
-        which was initially passed to :meth:`propagate`."""
-
-        return aggr_out
-
-class GCNConv(MessagePassing):
-    def __init__(self, in_channels, out_channels, act=F.relu, improved=True, bias=False):
-        super(GCNConv, self).__init__()
-
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.improved = improved
-        self.act = act
-
-        self.weight = Parameter(torch.Tensor(in_channels, out_channels))
-
-        if bias:
-            self.bias = Parameter(torch.Tensor(out_channels))
-        else:
-            self.register_parameter('bias', None)
-
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        glorot(self.weight)
-        zeros(self.bias)
-
-    def forward(self, x, edge_index, edge_weight=None):
-        if edge_weight is None:
-            edge_weight = torch.ones(
-                (edge_index.size(1), ), dtype=x.dtype, device=x.device)
-        edge_weight = edge_weight.view(-1)
-        assert edge_weight.size(0) == edge_index.size(1)
-
-        edge_index = add_self_loops(edge_index, num_nodes=x.size(0))
-        loop_weight = torch.full(
-            (x.size(0), ),
-            1 if not self.improved else 2,
-            dtype=x.dtype,
-            device=x.device)
-        edge_weight = torch.cat([edge_weight, loop_weight], dim=0)
-
-        row, col = edge_index
-        deg = scatter_add(edge_weight, row, dim=0, dim_size=x.size(0))
-        deg_inv = deg.pow(-0.5)
-        deg_inv[deg_inv == float('inf')] = 0
-
-        norm = deg_inv[row] * edge_weight * deg_inv[col]
-
-        x = torch.matmul(x, self.weight)
-        out = self.propagate('add', edge_index, x=x, norm=norm)
-        return self.act(out)
-
-    def message(self, x_j, norm):
-        return norm.view(-1, 1) * x_j
-
-    def update(self, aggr_out):
-        if self.bias is not None:
-            aggr_out = aggr_out + self.bias
-        return aggr_out
-
-    def __repr__(self):
-        return '{}({}, {})'.format(self.__class__.__name__, self.in_channels,
-                                   self.out_channels)
+        
+        out = h_out
+        return out, h_out
 
 class VGRNN(nn.Module):
     def __init__(self, x_dim, h_dim, z_dim, n_layers, eps, conv='GCN', bias=False, device="cuda"):
@@ -153,7 +86,114 @@ class VGRNN(nn.Module):
             self.phi_x = nn.Sequential(nn.Linear(x_dim, h_dim), nn.ReLU()).to(device)
             self.phi_z = nn.Sequential(nn.Linear(z_dim, h_dim), nn.ReLU()).to(device)
 
-            self.enc = GCNConv(h_dim + h_dim, h_dim)
+            self.enc = GCNConv(h_dim + h_dim, h_dim).to(device)
+            self.enc_mean = GCNConv(h_dim, z_dim, act=lambda x:x).to(device)
+            self.enc_std = GCNConv(h_dim, z_dim, act=F.softplus).to(device)
+
+            self.prior = nn.Sequential(nn.Linear(h_dim, h_dim), nn.ReLU()).to(device)
+            self.prior_mean = nn.Sequential(nn.Linear(h_dim, z_dim)).to(device)
+            self.prior_std = nn.Sequential(nn.Linear(h_dim, z_dim), nn.Softplus()).to(device)
+
+            self.rnn = graph_gru_gcn(h_dim + h_dim, h_dim, n_layers, bias, device).to(device)
 
         else:
             raise NotImplementedError
+        
+        # self.decoder = InnerProductDecoder(act=lambda x: x).to(device)
+        self.decoder = InnerProductDecoder().to(device)
+        
+    def forward(self, x, edge_idx_list, adj_orig_dense_list, hidden_in=None):
+        assert len(adj_orig_dense_list) == len(edge_idx_list)
+
+        kld_loss = 0
+        nll_loss = 0
+        all_enc_mean, all_enc_std = [], []
+        all_prior_mean, all_prior_std = [], []
+
+        if hidden_in is None:
+            h = Variable(torch.zeros(self.n_layers, x.size(1), self.h_dim)).to(self.device)
+        else:
+            h = Variable(hidden_in).to(self.device)
+
+        for t in range(x.size(0)):
+            phi_x_t = self.phi_x(x[t]).to(self.device)
+            
+            # Encoder
+            enc_t = self.enc(torch.cat([phi_x_t, h[-1]], dim=1), edge_idx_list[t]).to(self.device)
+            enc_mean_t = self.enc_mean(enc_t, edge_idx_list[t]).to(self.device)
+            enc_std_t = self.enc_std(enc_t, edge_idx_list[t]).to(self.device)
+
+            # Prior
+            prior_t = self.prior(h[-1]).to(self.device)
+            prior_mean_t = self.prior_mean(prior_t).to(self.device)
+            prior_std_t = self.prior_std(prior_t).to(self.device)
+
+            # Sampling and Reparameterization
+            z_t = self._reparameterized_sample(enc_mean_t, enc_std_t).to(self.device)
+            phi_z_t = self.phi_z(z_t).to(self.device)
+
+            # Decoder
+            dec_t = self.decoder(z_t).to(self.device)
+            
+            # Recurrence
+            _, h = self.rnn(torch.cat([phi_x_t, phi_z_t], dim=1), edge_idx_list[t], h)
+
+            nnodes = adj_orig_dense_list[t].size()[0]
+            enc_mean_t_sl = enc_mean_t[0:nnodes, :]
+            enc_std_t_sl = enc_std_t[0:nnodes, :]
+            prior_mean_t_sl = prior_mean_t[0:nnodes, :]
+            prior_std_t_sl = prior_std_t[0:nnodes, :]
+            dec_t_sl = dec_t[0:nnodes, 0:nnodes]
+
+            # Computing losses
+            # kld_loss += self._kld_gauss(enc_mean_t_sl, enc_std_t_sl, prior_mean_t_sl, prior_std_t_sl)
+
+            kld_loss += self._kld_gauss_zu(enc_mean_t, enc_std_t)
+            adj_orig_dense_list[t] = adj_orig_dense_list[t].to(self.device)
+            nll_loss += self._nll_bernoulli(dec_t_sl, adj_orig_dense_list[t])
+            
+            all_enc_std.append(enc_std_t_sl)
+            all_enc_mean.append(enc_mean_t_sl)
+            all_prior_mean.append(prior_mean_t_sl)
+            all_prior_std.append(prior_std_t_sl)
+        
+        return kld_loss, nll_loss, all_enc_mean, all_prior_mean, h
+    
+
+    def _reparameterized_sample(self, mean, std):
+        eps1 = torch.FloatTensor(std.size()).normal_().to(self.device)
+        eps1 = Variable(eps1).to(self.device)
+        return eps1.mul(std).add_(mean)
+    
+    def reset_parameters(self, stdv=1e-1):
+        for weight in self.parameters():
+            weight.data.normal_(0, stdv)
+     
+    def _init_weights(self, stdv):
+        pass
+
+    def _kld_gauss(self, mean_1, std_1, mean_2, std_2):
+        num_nodes = mean_1.size()[0]
+        kld_element =  (2 * torch.log(std_2 + self.eps) - 2 * torch.log(std_1 + self.eps) +
+                        (torch.pow(std_1 + self.eps ,2) + torch.pow(mean_1 - mean_2, 2)) / 
+                        torch.pow(std_2 + self.eps ,2) - 1)
+        return (0.5 / num_nodes) * torch.mean(torch.sum(kld_element, dim=1), dim=0)
+    
+    def _kld_gauss_zu(self, mean_in, std_in):
+        num_nodes = mean_in.size()[0]
+        std_log = torch.log(std_in + self.eps)
+        kld_element =  torch.mean(torch.sum(1 + 2 * std_log - mean_in.pow(2) -
+                                            torch.pow(torch.exp(std_log), 2), 1))
+        return (-0.5 / num_nodes) * kld_element
+    
+    def _nll_bernoulli(self, logits, target_adj_dense):
+        temp_size = target_adj_dense.size()[0]
+        temp_sum = target_adj_dense.sum()
+        posw = float(temp_size * temp_size - temp_sum) / temp_sum
+        norm = temp_size * temp_size / float((temp_size * temp_size - temp_sum) * 2)
+        nll_loss_mat = F.binary_cross_entropy_with_logits(input=logits
+                                                          , target=target_adj_dense
+                                                          , pos_weight=posw
+                                                          , reduction='none')
+        nll_loss = -1 * norm * torch.mean(nll_loss_mat, dim=[0,1])
+        return - nll_loss
