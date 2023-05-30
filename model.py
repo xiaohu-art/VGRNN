@@ -146,9 +146,7 @@ class VGRNN(nn.Module):
             dec_t_sl = dec_t[0:nnodes, 0:nnodes]
 
             # Computing losses
-            # kld_loss += self._kld_gauss(enc_mean_t_sl, enc_std_t_sl, prior_mean_t_sl, prior_std_t_sl)
-
-            kld_loss += self._kld_gauss_zu(enc_mean_t, enc_std_t)
+            kld_loss += self._kld_gauss(enc_mean_t_sl, enc_std_t_sl, prior_mean_t_sl, prior_std_t_sl)
             adj_orig_dense_list[t] = adj_orig_dense_list[t].to(self.device)
             nll_loss += self._nll_bernoulli(dec_t_sl, adj_orig_dense_list[t])
             
@@ -156,7 +154,7 @@ class VGRNN(nn.Module):
             all_enc_mean.append(enc_mean_t_sl)
             all_prior_mean.append(prior_mean_t_sl)
             all_prior_std.append(prior_std_t_sl)
-        
+
         return kld_loss, nll_loss, all_enc_mean, all_prior_mean, h
     
 
@@ -174,17 +172,17 @@ class VGRNN(nn.Module):
 
     def _kld_gauss(self, mean_1, std_1, mean_2, std_2):
         num_nodes = mean_1.size()[0]
+        kld_element =  (2 * torch.log(std_2 + self.eps) - 2 * torch.log(std_1 + self.eps) -
+                        (torch.pow(std_1 + self.eps ,2) + torch.pow(mean_1 - mean_2, 2)) / 
+                        torch.pow(std_2 + self.eps ,2) + 1)
+        return (0.5 / num_nodes) * torch.mean(torch.sum(kld_element, dim=0), dim=0)
+    
+    def _kld_gauss_bak(self, mean_1, std_1, mean_2, std_2):
+        num_nodes = mean_1.size()[0]
         kld_element =  (2 * torch.log(std_2 + self.eps) - 2 * torch.log(std_1 + self.eps) +
                         (torch.pow(std_1 + self.eps ,2) + torch.pow(mean_1 - mean_2, 2)) / 
                         torch.pow(std_2 + self.eps ,2) - 1)
         return (0.5 / num_nodes) * torch.mean(torch.sum(kld_element, dim=1), dim=0)
-    
-    def _kld_gauss_zu(self, mean_in, std_in):
-        num_nodes = mean_in.size()[0]
-        std_log = torch.log(std_in + self.eps)
-        kld_element =  torch.mean(torch.sum(1 + 2 * std_log - mean_in.pow(2) -
-                                            torch.pow(torch.exp(std_log), 2), 1))
-        return (-0.5 / num_nodes) * kld_element
     
     def _nll_bernoulli(self, logits, target_adj_dense):
         temp_size = target_adj_dense.size()[0]

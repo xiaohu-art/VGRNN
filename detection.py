@@ -103,9 +103,9 @@ def main(cfg):
         loss.backward()
         optimizer.step()
 
-        kld_losses.append(kld_loss)
-        nll_losses.append(nll_loss)
-        losses.append(loss)
+        kld_losses.append(kld_loss.item())
+        nll_losses.append(nll_loss.item())
+        losses.append(loss.item())
 
         nn.utils.clip_grad_norm_(model.parameters(), cfg.clip)
 
@@ -130,9 +130,8 @@ def main(cfg):
             auc_test.append(np.mean(np.array(auc_scores_det_test)))
             ap_val.append(np.mean(np.array(ap_scores_det_tes)))
 
-            # visualize(kld_losses, nll_losses, losses, auc_val, ap_val, auc_test, ap_test)
-            
-        logger.info(f"Epoch: {k}, kld loss: {kld_loss.item()}, nll loss: {nll_loss.item()}, loss: {loss.item()}, time: {time.time() - start_time}s")
+            visualize(kld_losses, nll_losses, losses, auc_val, ap_val, auc_test, ap_test)
+            logger.info(f"Epoch: {k}, kld loss: {kld_loss.item()}, nll loss: {nll_loss.item()}, loss: {loss.item()}")
     
 
 if __name__ == "__main__":
