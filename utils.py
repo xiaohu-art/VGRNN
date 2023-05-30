@@ -1,6 +1,8 @@
 import pickle
 import numpy as np
 import scipy.sparse as sp
+from sklearn.metrics import roc_auc_score, average_precision_score
+import torch_scatter
 
 def loader(datasets):
 
@@ -19,6 +21,40 @@ def sparse_to_tuple(sparse_mx):
     values = sparse_mx.data
     shape = sparse_mx.shape
     return coords, values, shape
+
+'''
+to be change
+'''
+def scatter_(name, src, index, dim_size=None):
+    r"""Aggregates all values from the :attr:`src` tensor at the indices
+    specified in the :attr:`index` tensor along the first dimension.
+    If multiple indices reference the same location, their contributions
+    are aggregated according to :attr:`name` (either :obj:`"add"`,
+    :obj:`"mean"` or :obj:`"max"`).
+    Args:
+        name (string): The aggregation to use (:obj:`"add"`, :obj:`"mean"`,
+            :obj:`"max"`).
+        src (Tensor): The source tensor.
+        index (LongTensor): The indices of elements to scatter.
+        dim_size (int, optional): Automatically create output tensor with size
+            :attr:`dim_size` in the first dimension. If set to :attr:`None`, a
+            minimal sized output tensor is returned. (default: :obj:`None`)
+    :rtype: :class:`Tensor`
+    """
+
+    assert name in ['add', 'mean', 'max']
+
+    op = getattr(torch_scatter, 'scatter_{}'.format(name))
+    fill_value = -1e38 if name is 'max' else 0
+
+    out = op(src, index, 0, None, dim_size, fill_value)
+    if isinstance(out, tuple):
+        out = out[0]
+
+    if name is 'max':
+        out[out == fill_value] = 0
+
+    return out
 
 def mask_edges_det(adjs_list):
     adj_train_l, train_edges_l, val_edges_l = [], [], []
@@ -113,3 +149,34 @@ def mask_edges_det(adjs_list):
         test_edges_false_l.append(np.array(test_edges_false))   # test negtive edges list
 
     return adj_train_l, train_edges_l, val_edges_l, val_edges_false_l, test_edges_l, test_edges_false_l
+
+def get_roc_scores(edges_pos, edges_neg, adj_orig_dense_list, embs):
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-x))
+    
+    auc_scores = []
+    ap_scores = []
+    
+    for i in range(len(edges_pos)):
+        # Predict on test set of edges
+        emb = embs[i].detach().numpy()
+        adj_rec = np.dot(emb, emb.T)
+        adj_orig_t = adj_orig_dense_list[i]
+        preds = []
+        pos = []
+        for e in edges_pos[i]:
+            preds.append(sigmoid(adj_rec[e[0], e[1]]))
+            pos.append(adj_orig_t[e[0], e[1]])
+            
+        preds_neg = []
+        neg = []
+        for e in edges_neg[i]:
+            preds_neg.append(sigmoid(adj_rec[e[0], e[1]]))
+            neg.append(adj_orig_t[e[0], e[1]])
+        
+        preds_all = np.hstack([preds, preds_neg])
+        labels_all = np.hstack([np.ones(len(preds)), np.zeros(len(preds_neg))])
+        auc_scores.append(roc_auc_score(labels_all, preds_all))
+        ap_scores.append(average_precision_score(labels_all, preds_all))
+
+    return auc_scores, ap_scores

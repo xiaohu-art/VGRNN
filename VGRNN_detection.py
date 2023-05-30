@@ -9,7 +9,7 @@ import hydra
 import time
 
 from utils import loader, mask_edges_det
-from model import VGRNN
+from model import VGRNN, MessagePassing
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -68,7 +68,13 @@ def main(cfg):
                   cfg.n_layers,
                   cfg.eps,
                   cfg.conv_type,
-                  bias = True).to(device)
+                  bias = True,
+                  device=device)
+    
+    mp = MessagePassing()
+    print(mp.message_args)
+    print(mp.update_args)
+    exit()
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     
