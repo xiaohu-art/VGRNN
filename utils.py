@@ -1,9 +1,20 @@
 import pickle
 import numpy as np
 import scipy.sparse as sp
+import random
+import os
 from sklearn.metrics import roc_auc_score, average_precision_score
 import torch
 import matplotlib.pyplot as plt
+
+def set_seed_everywhere(seed=0):
+    """
+    Set seed for all randomness sources
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
 
 def loader(datasets):
 
@@ -120,7 +131,10 @@ def mask_edges_det(adjs_list):
 @torch.no_grad()
 def get_roc_scores(edges_pos, edges_neg, adj_orig_dense_list, embs):
     def sigmoid(x):
-        return 1 / (1 + np.exp(-x))
+        if x < 0:
+            return np.exp(x) / (1+np.exp(x))
+        else:
+            return 1 / (1 + np.exp(-x))
     
     auc_scores = []
     ap_scores = []
@@ -133,7 +147,7 @@ def get_roc_scores(edges_pos, edges_neg, adj_orig_dense_list, embs):
         preds = []
         pos = []
         for e in edges_pos[i]:
-            preds.append(sigmoid(adj_rec[e[0], e[1]]))
+            preds.append(adj_rec[e[0], e[1]])
             pos.append(adj_orig_t[e[0], e[1]])
             
         preds_neg = []
@@ -149,7 +163,7 @@ def get_roc_scores(edges_pos, edges_neg, adj_orig_dense_list, embs):
 
     return auc_scores, ap_scores
 
-def visualize(kld_losses, nll_losses, losses, auc_val, ap_val, auc_test, ap_test):
+def visualize(kld_losses, nll_losses, losses, auc_val, ap_val, auc_test, ap_test, cfg):
     
     plt.figure(figsize=(20, 6))
 
@@ -170,5 +184,5 @@ def visualize(kld_losses, nll_losses, losses, auc_val, ap_val, auc_test, ap_test
     plt.legend()
     plt.xlabel("epoch / interval")
 
-    plt.savefig("result.png")
+    plt.savefig(f"{cfg.conv_type}_{cfg.datasets}.png")
     plt.close()

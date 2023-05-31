@@ -9,7 +9,7 @@ import hydra
 import time
 import logging
 
-from utils import loader, mask_edges_det, get_roc_scores, visualize
+from utils import loader, mask_edges_det, get_roc_scores, visualize, set_seed_everywhere
 from model import VGRNN
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 @hydra.main(config_path="cfgs", config_name="config", version_base="1.3")
 def main(cfg):
     seed = cfg.seed
-    np.random.seed(seed)
+    set_seed_everywhere(seed)
 
     '''
     loading data
@@ -128,11 +128,15 @@ def main(cfg):
             auc_val.append(np.mean(np.array(auc_scores_det_val)))
             ap_val.append(np.mean(np.array(ap_scores_det_val)))
             auc_test.append(np.mean(np.array(auc_scores_det_test)))
-            ap_val.append(np.mean(np.array(ap_scores_det_tes)))
+            ap_test.append(np.mean(np.array(ap_scores_det_tes)))
 
-            visualize(kld_losses, nll_losses, losses, auc_val, ap_val, auc_test, ap_test)
-            logger.info(f"Epoch: {k}, kld loss: {kld_loss.item()}, nll loss: {nll_loss.item()}, loss: {loss.item()}")
-    
+            visualize(kld_losses, nll_losses, losses, auc_val, ap_val, auc_test, ap_test, cfg)
+            logger.info(f"Epoch: {k}, kld loss: {kld_loss.item()}, nll loss: {nll_loss.item()}, loss: {loss.item()}, time: {time.time() - start_time}s")
+
+    logger.info(f"Best auc val: {np.max(np.array(auc_val))}")
+    logger.info(f"Best ap val: {np.max(np.array(ap_val))}")
+    logger.info(f"Best auc test: {np.max(np.array(auc_test))}")
+    logger.info(f"Best ap test: {np.max(np.array(ap_test))}")   
 
 if __name__ == "__main__":
     main()

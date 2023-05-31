@@ -5,7 +5,7 @@ h_dim: 32
 z_dim: 16
 n_layers: 1
 clip: 10
-lr: 1e-2
-eps: 1e-8
-conv_type: GCN # SAGE
-datasets: enron10 # dplb fb
+lr: 0.01
+eps: 1.0e-08
+conv_type: GCN
+datasets: fb
