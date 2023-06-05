@@ -34,13 +34,17 @@ def sparse_to_tuple(sparse_mx):
     shape = sparse_mx.shape
     return coords, values, shape
 
+# Checking elements in a: list are or aren't in b
+def ismember(a, b, tol=5):  
+    rows_close = np.all(np.round(a - b[:, None], tol) == 0, axis=-1)
+    return np.any(rows_close)
+
 def mask_edges_det(adjs_list):
     adj_train_l, train_edges_l, val_edges_l = [], [], []
     val_edges_false_l, test_edges_l, test_edges_false_l = [], [], []
     edges_list = []
 
-    for i in range(len(adjs_list)):
-        adj = adjs_list[i]
+    for adj in adjs_list:
         # Remove diagonal elements
         adj = adj - sp.dia_matrix((adj.diagonal()[np.newaxis, :], [0]), shape=adj.shape)
         adj.eliminate_zeros()
@@ -65,11 +69,6 @@ def mask_edges_det(adjs_list):
         train_edges = np.delete(edges, np.hstack([test_edge_idx, val_edge_idx]), axis=0)
 
         edges_list.append(edges)
-
-        # Checking elements in a: list are or aren't in b
-        def ismember(a, b, tol=5):  
-            rows_close = np.all(np.round(a - b[:, None], tol) == 0, axis=-1)
-            return np.any(rows_close)
 
         test_edges_false = []
         while len(test_edges_false) < len(test_edges):
@@ -127,6 +126,120 @@ def mask_edges_det(adjs_list):
         test_edges_false_l.append(np.array(test_edges_false))   # test negtive edges list
 
     return adj_train_l, train_edges_l, val_edges_l, val_edges_false_l, test_edges_l, test_edges_false_l
+
+def mask_edges_prd(adjs_list):
+    pos_edge_l, neg_edge_l = [], []
+    
+    for adj in adjs_list:
+        # Remove diagonal elements
+        adj = adj - sp.dia_matrix((adj.diagonal()[np.newaxis, :], [0]), shape=adj.shape)
+        adj.eliminate_zeros()
+
+        # Check that diag is zero
+        assert np.diag(adj.todense()).sum() == 0
+
+        adj_triu = sp.triu(adj)
+        adj_tuple = sparse_to_tuple(adj_triu)
+        edges = adj_tuple[0]
+        edges_all = sparse_to_tuple(adj)[0]
+        num_false = int(edges.shape[0])
+
+        pos_edge_l.append(edges)
+
+        edges_false = []
+        while len(edges_false) < num_false:
+            idx_i = np.random.randint(0, adj.shape[0])
+            idx_j = np.random.randint(0, adj.shape[0])
+            if idx_i == idx_j:
+                continue
+            if ismember([idx_i, idx_j], edges_all):
+                continue
+            if edges_false:
+                if ismember([idx_j, idx_i], np.array(edges_false)):
+                    continue
+                if ismember([idx_i, idx_j], np.array(edges_false)):
+                    continue
+            edges_false.append([idx_i, idx_j])
+
+        assert ~ismember(edges_false, edges_all)
+        
+        neg_edge_l.append(edges_false)
+
+    return pos_edge_l, neg_edge_l
+
+def mask_edges_prd_new(adjs_list, adj_orig_dense_list):
+    pos_edge_l, neg_edge_l = [], []
+
+    adj = adjs_list[0]
+    # Remove diagonal elements
+    adj = adj - sp.dia_matrix((adj.diagonal()[np.newaxis, :], [0]), shape=adj.shape)
+    adj.eliminate_zeros()
+    # Check that diag is zero:
+    assert np.diag(adj.todense()).sum() == 0
+
+    adj_triu = sp.triu(adj)
+    adj_tuple = sparse_to_tuple(adj_triu)
+    edges = adj_tuple[0]
+    edges_all = sparse_to_tuple(adj)[0]
+    num_false = int(edges.shape[0])
+
+    pos_edge_l.append(edges)
+
+    edges_false = []
+    while len(edges_false) < num_false:
+        idx_i = np.random.randint(0, adj.shape[0])
+        idx_j = np.random.randint(0, adj.shape[0])
+        if idx_i == idx_j:
+            continue
+        if ismember([idx_i, idx_j], edges_all):
+            continue
+        if edges_false:
+            if ismember([idx_j, idx_i], np.array(edges_false)):
+                continue
+            if ismember([idx_i, idx_j], np.array(edges_false)):
+                continue
+        edges_false.append([idx_i, idx_j])
+
+    neg_edge_l.append(np.asarray(edges_false))
+
+    for i in range(1, len(adjs_list)):
+        edges_pos = np.transpose(np.asarray(np.where((adj_orig_dense_list[i] - adj_orig_dense_list[i-1])>0)))
+        num_false = int(edges_pos.shape[0])
+        
+        adj = adjs_list[i]
+        # Remove diagonal elements
+        adj = adj - sp.dia_matrix((adj.diagonal()[np.newaxis, :], [0]), shape=adj.shape)
+        adj.eliminate_zeros()
+        # Check that diag is zero:
+        assert np.diag(adj.todense()).sum() == 0
+        
+        adj_triu = sp.triu(adj)
+        adj_tuple = sparse_to_tuple(adj_triu)
+        edges = adj_tuple[0]
+        edges_all = sparse_to_tuple(adj)[0]
+        
+        edges_false = []
+        while len(edges_false) < num_false:
+            idx_i = np.random.randint(0, adj.shape[0])
+            idx_j = np.random.randint(0, adj.shape[0])
+            if idx_i == idx_j:
+                continue
+            if ismember([idx_i, idx_j], edges_all):
+                continue
+            if edges_false:
+                if ismember([idx_j, idx_i], np.array(edges_false)):
+                    continue
+                if ismember([idx_i, idx_j], np.array(edges_false)):
+                    continue
+            edges_false.append([idx_i, idx_j])
+        
+        assert ~ismember(edges_false, edges_all)
+        
+        neg_edge_l.append(np.asarray(edges_false))
+        pos_edge_l.append(edges_pos)
+    
+    return pos_edge_l, neg_edge_l
+
 
 @torch.no_grad()
 def get_roc_scores(edges_pos, edges_neg, adj_orig_dense_list, embs):
