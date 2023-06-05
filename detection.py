@@ -53,7 +53,11 @@ def main(cfg):
         x_in_list.append(x)
 
     x_in = Variable(torch.stack(x_in_list)).to(device)     #(seq_len, num_node, num_node)
-
+    
+    adj_label_l = []
+    for adj_train in adj_train_l:
+        adj_label = torch.tensor(adj_train.toarray().astype(np.float32)).to(device)
+        adj_label_l.append(adj_label)
     
     '''
     building model
