@@ -79,7 +79,7 @@ def main(cfg):
     training
     '''
     seq_start = 0
-    seq_end = seq_len - 3
+    seq_end = seq_len - cfg.val_len
     
     kld_losses = []
     nll_losses = []

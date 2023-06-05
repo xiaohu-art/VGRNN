@@ -290,12 +290,18 @@ def visualize(kld_losses, nll_losses, losses, auc_val, ap_val, auc_test, ap_test
 
     plt.subplot(1, 2, 2)
     plt.title("auc scores and ap scores")
-    plt.plot(auc_val, label="Val set auc score")
-    plt.plot(ap_val, label="Val set ap score")
-    plt.plot(auc_test, label="Test set auc score")
-    plt.plot(ap_test, label="Test set ap score")
+    if cfg.task == "det":
+        plt.plot(auc_val, label="Val set auc score")
+        plt.plot(ap_val, label="Val set ap score")
+        plt.plot(auc_test, label="Test set auc score")
+        plt.plot(ap_test, label="Test set ap score")
+    else:
+        plt.plot(auc_val, label="Prediction auc score")
+        plt.plot(ap_val, label="Prediction ap score")
+        plt.plot(auc_test, label="Prediction on new auc score")
+        plt.plot(ap_test, label="Prediction on new ap score")
     plt.legend()
     plt.xlabel("epoch / interval")
 
-    plt.savefig(f"{cfg.conv_type}_{cfg.datasets}.png")
+    plt.savefig(f"{cfg.task}_{cfg.conv_type}_{cfg.datasets}.png")
     plt.close()
