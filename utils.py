@@ -6,6 +6,9 @@ import os
 from sklearn.metrics import roc_auc_score, average_precision_score
 import torch
 import matplotlib.pyplot as plt
+from hydra.utils import get_original_cwd
+
+import os
 
 def set_seed_everywhere(seed=0):
     """
@@ -17,11 +20,11 @@ def set_seed_everywhere(seed=0):
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 def loader(datasets):
-
-    with open('data/{data}/adj_time_list.pickle'.format(data = datasets), 'rb') as handle:
+    dir_path = get_original_cwd()
+    with open('{pth}/data/{data}/adj_time_list.pickle'.format(pth = dir_path, data = datasets), 'rb') as handle:
         adj_time_list = pickle.load(handle, encoding='iso-8859-1')
 
-    with open('data/{data}/adj_orig_dense_list.pickle'.format(data = datasets), 'rb') as handle:
+    with open('{pth}/data/{data}/adj_orig_dense_list.pickle'.format(pth = dir_path, data = datasets), 'rb') as handle:
         adj_orig_dense_list = pickle.load(handle, encoding='bytes')
 
     return adj_time_list, adj_orig_dense_list

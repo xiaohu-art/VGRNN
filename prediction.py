@@ -9,6 +9,8 @@ import hydra
 import time
 import logging
 
+import os
+
 from utils import loader, get_roc_scores, set_seed_everywhere, visualize
 from utils import mask_edges_det, mask_edges_prd, mask_edges_prd_new
 from model import VGRNN
@@ -128,12 +130,12 @@ def main(cfg):
             ap_prd_new.append(np.mean(np.array(ap_score_prd_new)))
 
             visualize(kld_losses, nll_losses, losses, auc_prd, ap_prd, auc_prd_new, ap_prd_new, cfg)
-            logger.info(f"Epoch: {k}, kld loss: {kld_loss.item()}, nll loss: {nll_loss.item()}, loss: {loss.item()}, time: {time.time() - start_time}s")
-
-    logger.info(f"Best auc val: {np.max(np.array(auc_prd))}")
-    logger.info(f"Best ap val: {np.max(np.array(ap_prd))}")
-    logger.info(f"Best auc test: {np.max(np.array(auc_prd_new))}")
-    logger.info(f"Best ap test: {np.max(np.array(ap_prd_new))}") 
+            logger.info("Epoch: %d, kld loss: %.5f, nll loss: %.5f, loss: %.5f, time: %.2fs" % (k, kld_loss.item(), nll_loss.item(), loss.item(), time.time() - start_time))
+            
+    logger.info("Best auc val: %.2f%%" % (np.max(np.array(auc_prd))*100))
+    logger.info("Best ap val: %.2f%%" % (np.max(np.array(ap_prd))*100))
+    logger.info("Best auc val new: %.2f%%" % (np.max(np.array(auc_prd_new))*100))
+    logger.info("Best ap val new: %.2f%%" % (np.max(np.array(ap_prd_new))*100))
 
 if __name__ == "__main__":
     main()
